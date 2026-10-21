@@ -1,0 +1,20 @@
+{
+  "name": "aggregate-quote",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Aggregate delivery quote calculator for iPhone and Android",
+  "scripts": {
+    "android": "cap add android && capacitor-assets generate --android && cap sync android",
+    "ios": "cap add ios && capacitor-assets generate --ios && cap sync ios"
+  },
+  "dependencies": {
+    "@capacitor/android": "6.1.2",
+    "@capacitor/core": "6.1.2",
+    "@capacitor/ios": "6.1.2",
+    "@capacitor/status-bar": "6.0.1"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "3.0.5",
+    "@capacitor/cli": "6.1.2"
+  }
+}

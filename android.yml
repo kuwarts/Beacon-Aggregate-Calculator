@@ -1,0 +1,63 @@
+# Builds the Android app (.apk). Download it from the run's Artifacts,
+# or push a tag like v1.0.0 to attach it to a GitHub Release.
+name: Android app
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - run: npm install
+      - run: npx cap add android
+      - run: npx capacitor-assets generate --android
+      - run: npx cap sync android
+      - name: Set version
+        run: |
+          VERSION_NAME=$(node -p "require('./package.json').version")
+          sed -i "s/versionCode 1$/versionCode ${{ github.run_number }}/; s/versionName \"1.0\"/versionName \"$VERSION_NAME\"/" android/app/build.gradle
+          grep -E "versionCode|versionName" android/app/build.gradle
+      - name: Build installable APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+      - name: Build signed release (only if a keystore secret is set)
+        if: env.KEYSTORE_BASE64 != ''
+        working-directory: android
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
+          ./gradlew assembleRelease bundleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file=$PWD/release.keystore \
+            -Pandroid.injected.signing.store.password='${{ secrets.ANDROID_KEYSTORE_PASSWORD }}' \
+            -Pandroid.injected.signing.key.alias='${{ secrets.ANDROID_KEY_ALIAS }}' \
+            -Pandroid.injected.signing.key.password='${{ secrets.ANDROID_KEY_PASSWORD }}'
+      - name: Collect files
+        run: |
+          mkdir -p dist
+          cp android/app/build/outputs/apk/debug/app-debug.apk dist/AggregateQuote.apk
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            cp android/app/build/outputs/apk/release/app-release.apk dist/AggregateQuote-release.apk
+            cp android/app/build/outputs/bundle/release/app-release.aab dist/AggregateQuote-play-store.aab
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AggregateQuote-android
+          path: dist/
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*

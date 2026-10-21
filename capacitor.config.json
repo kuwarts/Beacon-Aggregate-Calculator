@@ -1,0 +1,9 @@
+{
+  "appId": "com.aggregatequote.app",
+  "appName": "Aggregate Quote",
+  "webDir": "www",
+  "backgroundColor": "#000000",
+  "ios": { "contentInset": "never", "backgroundColor": "#000000", "scrollEnabled": false },
+  "android": { "backgroundColor": "#000000" },
+  "plugins": { "StatusBar": { "style": "DARK", "backgroundColor": "#000000", "overlaysWebView": false } }
+}

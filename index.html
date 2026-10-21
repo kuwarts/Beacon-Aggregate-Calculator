@@ -1,0 +1,581 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+<title>Aggregate Quote</title>
+<meta name="description" content="Price aggregate deliveries fast and save bookings.">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Quote">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<style>html,body{margin:0}[hidden]{display:none!important}</style>
+</head>
+<body>
+<style>
+/* Layout: one phone-height column. Display on top, quote chips, iPhone-style keypad at the bottom. Sheets slide up for details. */
+:root{
+  --bg:#000; --fg:#fff; --muted:#8e8e93; --key:#333335; --key-hi:#4a4a4d;
+  --fn:#a5a5a5; --fn-ink:#000; --op:#ff9f0a; --op-hi:#ffc66e; --sheet:#1c1c1e; --row:#2c2c2e; --line:#38383a;
+  --good:#30d158; --bad:#ff453a;
+  --sans:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Helvetica Neue",Roboto,"Segoe UI",sans-serif;
+  color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%;background:var(--bg);color:var(--fg)}
+body{font-family:var(--sans);-webkit-font-smoothing:antialiased;overflow:hidden;touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+button:focus-visible,input:focus-visible{outline:2px solid var(--op);outline-offset:2px}
+input{font:inherit;color:inherit;user-select:text;-webkit-user-select:text}
+
+.app{height:100%;max-width:430px;margin:0 auto;display:flex;flex-direction:column;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-top:calc(8px + env(safe-area-inset-top,0px));padding-bottom:calc(14px + env(safe-area-inset-bottom,0px))}
+.top{display:flex;align-items:center;gap:8px;min-height:44px}
+.icon{width:40px;height:40px;border-radius:20px;display:grid;place-items:center;color:var(--op)}
+.icon svg{width:24px;height:24px}
+.icon:active{background:var(--row)}
+.spacer{flex:1}
+.book-btn{height:34px;padding:0 16px;border-radius:17px;background:var(--op);color:#000;font-weight:600;font-size:15px;transition:opacity .2s,transform .1s}
+.book-btn:disabled{opacity:.28}
+.book-btn:active{transform:scale(.96)}
+
+.display{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:flex-end;align-items:flex-end;text-align:right;gap:2px;padding:0 6px 6px}
+.meta{font-size:15px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.split{font-size:15px;color:var(--muted);display:inline-flex;align-items:center;gap:4px;border-radius:12px;padding:3px 8px;margin-right:-8px;font-variant-numeric:tabular-nums}
+.split:active{background:var(--row)}
+.split b{color:#d1d1d6;font-weight:500}
+.split .adj{color:var(--op)}
+.total{font-weight:300;font-size:80px;line-height:1;letter-spacing:-.02em;white-space:nowrap;font-variant-numeric:tabular-nums;max-width:100%;transition:font-size .12s}
+.total .cur{font-size:.55em;color:#d1d1d6;margin-right:.06em;vertical-align:.18em}
+
+.chips{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
+.chip{display:flex;flex-direction:column;align-items:flex-start;gap:1px;background:var(--sheet);border-radius:16px;padding:9px 14px;text-align:left;min-width:0;border:1.5px solid transparent;transition:border-color .2s,background .2s}
+.chip:active{background:var(--row)}
+.chip small{font-size:12px;color:var(--muted);display:flex;gap:4px;align-items:center;width:100%}
+.chip span{font-size:17px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.chip .val{font-variant-numeric:tabular-nums}
+.chip .val.empty{color:#48484a}
+.chip.on{border-color:var(--op)}
+.chip.on small{color:var(--op)}
+.caret{margin-left:auto;opacity:.7}
+.chip .unit{color:var(--muted);font-weight:400;font-size:15px}
+.cursor{display:inline-block;width:2px;height:1em;background:var(--op);vertical-align:-2px;margin-left:2px;animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+
+.pad{--ks:min(80px,calc((min(100vw,430px) - 32px - 36px)/4),calc((100dvh - 470px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px))/5));display:grid;grid-template-columns:repeat(4,1fr);gap:10px 12px;margin-top:12px;justify-items:center}
+.k{width:var(--ks);height:var(--ks);min-height:52px;min-width:52px;border-radius:50%;background:var(--key);font-size:34px;font-weight:400;display:grid;place-items:center;transition:background .25s,color .25s}
+.k:active{background:var(--key-hi);transition:none}
+.k.fn{background:var(--fn);color:var(--fn-ink);font-size:24px;font-weight:500}
+.k.fn:active{background:#d4d4d2}
+.k.op{background:var(--op);font-size:38px}
+.k.op:active,.k.op.lit{background:var(--op-hi)}
+.k.op.lit{background:#fff;color:var(--op)}
+.k.zero{grid-column:span 2;width:100%;border-radius:999px;justify-items:start;padding-left:calc(var(--ks)/2 - 10px)}
+.k.next{font-size:15px;font-weight:600;letter-spacing:.02em;line-height:1.1}
+.k svg{width:30px;height:30px}
+
+/* sheets */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.55);opacity:0;pointer-events:none;transition:opacity .35s;z-index:20}
+.scrim.on{opacity:1;pointer-events:auto}
+.sheet{position:fixed;left:0;right:0;bottom:0;margin:0 auto;max-width:430px;max-height:88%;background:var(--sheet);border-radius:14px 14px 0 0;z-index:21;display:flex;flex-direction:column;
+  transform:translateY(105%);transition:transform .42s cubic-bezier(.32,.72,0,1);padding-bottom:env(safe-area-inset-bottom,0px);will-change:transform}
+.sheet.on{transform:none}
+.grab{padding:8px 0 2px;display:grid;place-items:center;touch-action:none}
+.grab i{width:36px;height:5px;border-radius:3px;background:#48484a;display:block}
+.sh-head{display:flex;align-items:center;padding:4px 16px 10px;gap:8px}
+.sh-head h2{font-size:17px;font-weight:600;margin:0;flex:1;text-align:center}
+.sh-head .lbtn,.sh-head .rbtn{min-width:64px;color:var(--op);font-size:17px}
+.sh-head .lbtn{text-align:left}.sh-head .rbtn{text-align:right;font-weight:600}
+.sh-body{overflow-y:auto;padding:0 16px 20px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+.group{background:var(--row);border-radius:12px;overflow:hidden;margin-bottom:22px}
+.glabel{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;padding:0 16px 6px}
+.gnote{font-size:13px;color:var(--muted);padding:0 16px;margin:-14px 0 22px;line-height:1.35}
+.r{display:flex;align-items:center;gap:10px;min-height:46px;padding:0 16px;position:relative;font-variant-numeric:tabular-nums}
+.r+.r::before{content:"";position:absolute;left:16px;right:0;top:0;border-top:.5px solid var(--line)}
+.r .n{flex:1;min-width:0;font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.r .s{font-size:13px;color:var(--muted)}
+.r .v{font-size:17px;color:var(--muted)}
+.r.sum .n,.r.sum .v{color:var(--fg);font-weight:600}
+.r.big .v{font-size:22px;color:var(--op);font-weight:600}
+button.r{width:100%;text-align:left}
+button.r:active{background:#3a3a3c}
+.check{color:var(--op);width:20px;text-align:right}
+.ed{width:92px;text-align:right;background:#1c1c1e;border:1px solid transparent;border-radius:8px;padding:6px 8px;font-size:17px;font-variant-numeric:tabular-nums}
+.ed.w{width:120px}.ed.s{width:64px}
+.ed.mod{color:var(--op);border-color:rgba(255,159,10,.35)}
+.ed::placeholder{color:#636366}
+.txt{flex:1;min-width:0;text-align:left;background:transparent;border:0;font-size:17px;padding:10px 0}
+.x{color:var(--bad);font-size:22px;width:24px;line-height:1}
+.add{color:var(--op);font-size:17px}
+.calc{font-size:13px;color:var(--muted)}
+.pill{font-size:12px;font-weight:600;padding:3px 9px;border-radius:999px;background:#3a3a3c;color:#d1d1d6}
+.pill.Confirmed{background:rgba(255,159,10,.18);color:var(--op)}
+.pill.Delivered{background:rgba(48,209,88,.18);color:var(--good)}
+.pill.Cancelled{background:rgba(255,69,58,.16);color:var(--bad)}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:22px}
+.stat{background:var(--row);border-radius:12px;padding:12px 14px}
+.stat small{font-size:13px;color:var(--muted);display:block}
+.stat b{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums}
+.empty-state{text-align:center;color:var(--muted);padding:28px 20px 34px;font-size:15px;line-height:1.4}
+.empty-state b{display:block;color:var(--fg);font-size:17px;margin-bottom:4px}
+.bk-actions{display:flex;gap:8px;padding:0 16px 12px;flex-wrap:wrap}
+.seg{flex:1;min-width:80px;height:32px;border-radius:9px;background:#3a3a3c;font-size:14px;font-weight:500}
+.seg.on{background:var(--op);color:#000}
+.seg.del{flex:0 0 auto;padding:0 12px;color:var(--bad)}
+.seg.del.sure{background:var(--bad);color:#fff}
+.wide{display:block;width:100%;height:50px;border-radius:12px;background:var(--op);color:#000;font-size:17px;font-weight:600;margin-top:4px}
+.wide.ghost{background:var(--row);color:var(--op);font-weight:500}
+.wide:active{opacity:.8}
+.toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 12px);transform:translate(-50%,-140%);background:#2c2c2e;color:#fff;padding:10px 18px;border-radius:999px;font-size:15px;font-weight:500;z-index:40;transition:transform .45s cubic-bezier(.32,.72,0,1);white-space:nowrap;box-shadow:0 8px 30px rgba(0,0,0,.5)}
+.toast.on{transform:translate(-50%,0)}
+.toast .ok{color:var(--good);margin-right:6px}
+textarea.bk{width:100%;min-height:110px;background:var(--row);color:var(--fg);border:0;border-radius:12px;padding:12px;font:13px/1.4 ui-monospace,Menlo,monospace;margin-bottom:10px;user-select:text;-webkit-user-select:text}
+.sync{font-size:12px;color:#636366;text-align:center;padding:4px 0 0}
+@media (max-height:760px){.total{font-size:68px}.k{font-size:30px}.chip{padding:7px 14px}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="app" id="app">
+  <div class="top">
+    <button class="icon" id="openBookings" aria-label="Bookings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1" fill="currentColor"/><circle cx="3.5" cy="12" r="1" fill="currentColor"/><circle cx="3.5" cy="18" r="1" fill="currentColor"/></svg></button>
+    <button class="icon" id="openRates" aria-label="Rates"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></button>
+    <div class="spacer"></div>
+    <button class="book-btn" id="bookBtn" disabled>Book</button>
+  </div>
+
+  <div class="display">
+    <div class="meta" id="meta">&nbsp;</div>
+    <button class="split" id="openBreak" aria-label="Price breakdown"><span id="split">&nbsp;</span><svg width="8" height="13" viewBox="0 0 8 13" fill="none" stroke="currentColor" stroke-width="2"><path d="M1.5 1.5l5 5-5 5"/></svg></button>
+    <div class="total" id="total"><span class="cur">₱</span>0</div>
+  </div>
+
+  <div class="chips">
+    <button class="chip" id="pickProduct"><small>Aggregate<span class="caret">▾</span></small><span id="productName">—</span></button>
+    <button class="chip" id="pickVehicle"><small>Truck<span class="caret">▾</span></small><span id="vehicleName">—</span></button>
+    <button class="chip" id="fVol" data-field="vol"><small>Volume</small><span><span class="val" id="volVal"></span> <span class="unit">cbm</span></span></button>
+    <button class="chip" id="fKm" data-field="km"><small>Distance</small><span><span class="val" id="kmVal"></span> <span class="unit">km</span></span></button>
+  </div>
+
+  <div class="pad" id="pad">
+    <button class="k fn" data-k="AC" id="acKey">AC</button>
+    <button class="k fn" data-k="BS" aria-label="Delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M9 5h11v14H9l-6-7z"/><path d="M12.5 9.5l5 5M17.5 9.5l-5 5" stroke-linecap="round"/></svg></button>
+    <button class="k fn next" data-k="NEXT" id="nextKey">km ›</button>
+    <button class="k op" data-k="/">÷</button>
+    <button class="k" data-k="7">7</button><button class="k" data-k="8">8</button><button class="k" data-k="9">9</button>
+    <button class="k op" data-k="*">×</button>
+    <button class="k" data-k="4">4</button><button class="k" data-k="5">5</button><button class="k" data-k="6">6</button>
+    <button class="k op" data-k="-">−</button>
+    <button class="k" data-k="1">1</button><button class="k" data-k="2">2</button><button class="k" data-k="3">3</button>
+    <button class="k op" data-k="+">+</button>
+    <button class="k zero" data-k="0">0</button><button class="k" data-k=".">.</button>
+    <button class="k op" data-k="=">=</button>
+  </div>
+</div>
+
+<div class="scrim" id="scrim"></div>
+
+<!-- picker -->
+<section class="sheet" id="sPicker" aria-label="Choose">
+  <div class="grab"><i></i></div>
+  <div class="sh-head"><span class="lbtn"></span><h2 id="pickerTitle">Choose</h2><button class="rbtn" data-close>Done</button></div>
+  <div class="sh-body"><div class="group" id="pickerList"></div></div>
+</section>
+
+<!-- breakdown -->
+<section class="sheet" id="sBreak" aria-label="Price breakdown">
+  <div class="grab"><i></i></div>
+  <div class="sh-head"><button class="lbtn" id="resetOv">Reset</button><h2>Breakdown</h2><button class="rbtn" data-close>Done</button></div>
+  <div class="sh-body" id="breakBody"></div>
+</section>
+
+<!-- rates -->
+<section class="sheet" id="sRates" aria-label="Rates">
+  <div class="grab"><i></i></div>
+  <div class="sh-head"><span class="lbtn"></span><h2>Rates</h2><button class="rbtn" data-close>Done</button></div>
+  <div class="sh-body" id="ratesBody"></div>
+</section>
+
+<!-- confirm booking -->
+<section class="sheet" id="sBook" aria-label="Confirm booking">
+  <div class="grab"><i></i></div>
+  <div class="sh-head"><button class="lbtn" data-close>Cancel</button><h2>New booking</h2><span class="rbtn"></span></div>
+  <div class="sh-body" id="bookBody"></div>
+</section>
+
+<!-- bookings -->
+<section class="sheet" id="sList" aria-label="Bookings">
+  <div class="grab"><i></i></div>
+  <div class="sh-head"><span class="lbtn"></span><h2>Bookings</h2><button class="rbtn" data-close>Done</button></div>
+  <div class="sh-body" id="listBody"></div>
+</section>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+const $ = s => document.querySelector(s);
+const peso = (n, d=0) => '₱' + (Number(n)||0).toLocaleString('en-PH',{minimumFractionDigits:d,maximumFractionDigits:d});
+const num = (n, d=2) => (Number(n)||0).toLocaleString('en-PH',{maximumFractionDigits:d});
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const LS = { get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}}, set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}} };
+
+const DEFAULT_RATES = {
+  products:[{name:'Sand',rate:550},{name:'Ordinary Gravel',rate:750},{name:'Boulder',rate:825},{name:'Earth Fill',rate:475},
+    {name:'Mountain Soil',rate:400},{name:'G1',rate:1075},{name:'G2',rate:980},{name:'3/4 Gravel',rate:1280},{name:'S1',rate:880}],
+  vehicles:[{name:'12 wheeler',cap:30,rkm:225},{name:'10 wheeler',cap:20,rkm:220},{name:'6 wheeler - A',cap:10,rkm:300},{name:'6 wheeler - B',cap:5,rkm:354}],
+  trip:{driver:0,pahinante:0,diesel:0}
+};
+let rates = LS.get('aq.rates', DEFAULT_RATES);
+let bookings = LS.get('aq.bookings', []);
+const draft = LS.get('aq.draft', null);
+const S = Object.assign({product:'Sand', vehicle:'12 wheeler', vol:'30', km:'25', active:'vol', ov:{}, adj:''}, draft||{});
+S.ov = S.ov || {};
+let fresh = false; // true right after "=" so the next digit starts a new number
+let db = null;
+
+/* ---------- expression ---------- */
+const OPS = {'+':1,'-':1,'*':2,'/':2};
+function evalExpr(str){
+  const t = String(str||'').match(/\d*\.?\d+|\d+\.|[+\-*/]/g); if(!t) return 0;
+  while(t.length && OPS[t[t.length-1]]) t.pop();
+  const out=[], st=[];
+  for(const x of t){ if(OPS[x]){ while(st.length && OPS[st[st.length-1]]>=OPS[x]) out.push(st.pop()); st.push(x);} else out.push(parseFloat(x)); }
+  while(st.length) out.push(st.pop());
+  const s=[]; for(const x of out){ if(typeof x==='number') s.push(x); else { const b=s.pop()??0, a=s.pop()??0; s.push(x==='+'?a+b:x==='-'?a-b:x==='*'?a*b:(b?a/b:0)); } }
+  const r = s.pop(); return isFinite(r) ? Math.round(r*1e6)/1e6 : 0;
+}
+const pretty = e => String(e||'').replace(/\*/g,'×').replace(/\//g,'÷').replace(/-/g,'−');
+
+/* ---------- pricing ---------- */
+function prod(){ return rates.products.find(p=>p.name===S.product) || rates.products[0] || {name:'—',rate:0}; }
+function veh(){ return rates.vehicles.find(v=>v.name===S.vehicle) || rates.vehicles[0] || {name:'—',cap:0,rkm:0}; }
+const ovv = (k, base) => (S.ov[k]!==undefined && S.ov[k]!=='' && !isNaN(+S.ov[k])) ? +S.ov[k] : +base||0;
+function quote(){
+  const p=prod(), v=veh();
+  const vol=Math.max(0,evalExpr(S.vol)), km=Math.max(0,evalExpr(S.km));
+  const rate=ovv('rate',p.rate), rkm=ovv('rkm',v.rkm), cap=+v.cap||0;
+  const driver=ovv('driver',rates.trip.driver), pah=ovv('pahinante',rates.trip.pahinante), diesel=ovv('diesel',rates.trip.diesel);
+  const perTrip=driver+pah+diesel;
+  const trips = vol>0 && cap>0 ? Math.ceil(vol/cap - 1e-9) : 0;
+  const material=vol*rate, transport=trips*rkm*km, labour=trips*perTrip, delivery=transport+labour;
+  const adj = evalExpr(S.adj);
+  const total=material+delivery+adj;
+  return {p,v,vol,km,rate,rkm,cap,driver,pah,diesel,perTrip,trips,material,transport,labour,delivery,adj,total,
+    perCbm: vol? total/vol : 0, truck: rate*cap + rkm*km + perTrip,
+    ready: !!(p.name && v.name && vol>0 && km>0)};
+}
+
+/* ---------- main render ---------- */
+function fit(){
+  const el=$('#total'); el.style.fontSize='';
+  let size=parseFloat(getComputedStyle(el).fontSize);
+  const max=el.parentElement.clientWidth-12;
+  while(el.scrollWidth>max && size>30){ size-=4; el.style.fontSize=size+'px'; }
+}
+function render(){
+  const q=quote();
+  $('#productName').textContent=q.p.name; $('#vehicleName').textContent=q.v.name;
+  for(const f of ['vol','km']){
+    const el=$(f==='vol'?'#volVal':'#kmVal'), on=S.active===f;
+    el.classList.toggle('empty', !S[f]);
+    el.innerHTML = (S[f] ? esc(pretty(S[f])) : '0') + (on?'<i class="cursor"></i>':'');
+    $(f==='vol'?'#fVol':'#fKm').classList.toggle('on', on);
+  }
+  $('#nextKey').textContent = S.active==='vol' ? 'km ›' : '‹ cbm';
+  $('#acKey').textContent = S[S.active] ? 'C' : 'AC';
+  const edited = Object.keys(S.ov).some(k=>S.ov[k]!==''&&S.ov[k]!==undefined) || q.adj;
+  $('#meta').textContent = q.trips ? `${q.trips} trip${q.trips>1?'s':''} · ${num(q.vol)} cbm · ${num(q.km)} km` : 'Enter volume and distance';
+  $('#split').innerHTML = `<b>${peso(q.material)}</b> material + <b>${peso(q.delivery)}</b> delivery${q.adj?` <span class="adj">${q.adj>0?'+':'−'} ${peso(Math.abs(q.adj))}</span>`:''}${edited?' <span class="adj">•</span>':''}`;
+  $('#total').innerHTML = `<span class="cur">₱</span>${Math.round(q.total).toLocaleString('en-PH')}`;
+  $('#bookBtn').disabled = !q.ready;
+  fit();
+  LS.set('aq.draft', {product:S.product,vehicle:S.vehicle,vol:S.vol,km:S.km,active:S.active,ov:S.ov,adj:S.adj});
+  if(openSheet==='sBreak') renderBreak();
+}
+
+/* ---------- keypad ---------- */
+function press(k){
+  const f=S.active; let v=String(S[f]||'');
+  if(/^\d$/.test(k)){ if(fresh){v='';fresh=false;} const last=v.split(/[+\-*/]/).pop(); if(last==='0') v=v.slice(0,-1); if(v.length<14) v+=k; }
+  else if(k==='.'){ if(fresh){v='';fresh=false;} const last=v.split(/[+\-*/]/).pop(); if(!last.includes('.')) v+= last===''?'0.':'.'; }
+  else if(OPS[k]){ fresh=false; if(!v) v = '0'; if(OPS[v.slice(-1)]) v=v.slice(0,-1); v+=k; }
+  else if(k==='='){ v = v ? String(evalExpr(v)) : ''; fresh=true; if(f==='vol' && !S.km){ S[f]=v; S.active='km'; fresh=false; render(); return; } }
+  else if(k==='BS'){ fresh=false; v=v.slice(0,-1); }
+  else if(k==='AC'){ if(v){ v=''; } else { S.vol=''; S.km=''; S.ov={}; S.adj=''; S.active='vol'; render(); return; } }
+  else if(k==='NEXT'){ if(v) v=String(evalExpr(v)); S[f]=v; S.active = f==='vol'?'km':'vol'; fresh=true; render(); return; }
+  S[f]=v; render();
+  document.querySelectorAll('.k.op').forEach(b=>b.classList.toggle('lit', OPS[b.dataset.k] && v.slice(-1)===b.dataset.k));
+}
+$('#pad').addEventListener('click', e=>{ const b=e.target.closest('[data-k]'); if(b) press(b.dataset.k); });
+document.addEventListener('keydown', e=>{
+  if(openSheet || e.target.tagName==='INPUT') { if(e.key==='Escape') closeSheet(); return; }
+  const map={'Enter':'=','=':'=','Backspace':'BS','Escape':'AC','Tab':'NEXT','x':'*','X':'*'};
+  const k = map[e.key] || (/^[\d.+\-*/]$/.test(e.key)?e.key:null);
+  if(k){ e.preventDefault(); press(k); }
+});
+for(const id of ['#fVol','#fKm']) $(id).addEventListener('click', e=>{ const f=e.currentTarget.dataset.field; if(S.active!==f){ if(S[S.active]) S[S.active]=String(evalExpr(S[S.active])); S.active=f; fresh=true; render(); } });
+
+/* ---------- sheets ---------- */
+let openSheet=null;
+function showSheet(id){ if(openSheet) $('#'+openSheet).classList.remove('on'); openSheet=id; $('#'+id).classList.add('on'); $('#scrim').classList.add('on'); }
+function closeSheet(){ if(!openSheet) return; $('#'+openSheet).classList.remove('on'); $('#scrim').classList.remove('on'); const was=openSheet; openSheet=null; document.activeElement?.blur?.(); if(was==='sRates') saveRates(true); render(); }
+$('#scrim').addEventListener('click', closeSheet);
+document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click', closeSheet));
+document.querySelectorAll('.sheet').forEach(sh=>{ // drag down to dismiss
+  const g=sh.querySelector('.grab'); let y0=null,dy=0;
+  const head=[g, sh.querySelector('.sh-head')];
+  head.forEach(h=>{
+    h.addEventListener('pointerdown',e=>{ if(e.target.closest('button')) return; y0=e.clientY; dy=0; sh.style.transition='none'; h.setPointerCapture(e.pointerId); });
+    h.addEventListener('pointermove',e=>{ if(y0===null) return; dy=Math.max(0,e.clientY-y0); sh.style.transform=`translateY(${dy}px)`; });
+    const end=()=>{ if(y0===null) return; y0=null; sh.style.transition=''; sh.style.transform=''; if(dy>90) closeSheet(); };
+    h.addEventListener('pointerup',end); h.addEventListener('pointercancel',end);
+  });
+});
+
+/* picker */
+function openPicker(kind){
+  const isP = kind==='product', list = isP?rates.products:rates.vehicles, cur = isP?S.product:S.vehicle;
+  $('#pickerTitle').textContent = isP?'Aggregate':'Truck';
+  $('#pickerList').innerHTML = list.filter(x=>x.name).map((x,i)=>`<button class="r" data-i="${i}"><span class="n">${esc(x.name)}</span><span class="s">${isP?peso(x.rate)+' / cbm':num(x.cap)+' cbm · '+peso(x.rkm)+' / km'}</span><span class="check">${x.name===cur?'✓':''}</span></button>`).join('')
+    || `<div class="empty-state"><b>Nothing here yet</b>Add one in Rates.</div>`;
+  $('#pickerList').onclick = e=>{ const b=e.target.closest('[data-i]'); if(!b) return; const x=list.filter(y=>y.name)[+b.dataset.i];
+    if(isP){ if(S.product!==x.name) delete S.ov.rate; S.product=x.name; } else { if(S.vehicle!==x.name) delete S.ov.rkm; S.vehicle=x.name; }
+    b.parentElement.querySelectorAll('.check').forEach(c=>c.textContent=''); b.querySelector('.check').textContent='✓';
+    render(); setTimeout(closeSheet,160); };
+  showSheet('sPicker');
+}
+$('#pickProduct').addEventListener('click',()=>openPicker('product'));
+$('#pickVehicle').addEventListener('click',()=>openPicker('vehicle'));
+
+/* breakdown (per-quote overrides) */
+function edRow(name, key, base, sub, cls=''){
+  const v = S.ov[key]; const mod = v!==undefined && v!=='';
+  return `<div class="r"><span class="n">${name}${sub?`<br><span class="calc">${sub}</span>`:''}</span><input class="ed ${cls} ${mod?'mod':''}" inputmode="decimal" data-ov="${key}" value="${mod?esc(v):''}" placeholder="${num(base)}" aria-label="${name}"></div>`;
+}
+function renderBreak(fromInput){
+  const q=quote();
+  const body = `
+    <div class="glabel">Material · ${esc(q.p.name)}</div>
+    <div class="group">
+      ${edRow('Pickup rate','rate',q.p.rate,'₱ per cbm')}
+      <div class="r sum"><span class="n" data-out="matcalc">${num(q.vol)} cbm × ${peso(q.rate)}</span><span class="v" data-out="material">${peso(q.material)}</span></div>
+    </div>
+    <div class="glabel">Delivery · ${esc(q.v.name)}, ${q.trips} trip${q.trips===1?'':'s'}</div>
+    <div class="group">
+      ${edRow('Rate per km','rkm',q.v.rkm,'₱ per km')}
+      ${edRow('Driver','driver',rates.trip.driver,'₱ per trip')}
+      ${edRow('Pahinante','pahinante',rates.trip.pahinante,'₱ per trip')}
+      ${edRow('Diesel','diesel',rates.trip.diesel,'₱ per trip')}
+      <div class="r"><span class="n calc" style="font-size:15px" data-out="delcalc">${q.trips} × (${num(q.km)} km × ${peso(q.rkm)} + ${peso(q.perTrip)})</span></div>
+      <div class="r sum"><span class="n">Delivery</span><span class="v" data-out="delivery">${peso(q.delivery)}</span></div>
+    </div>
+    <div class="glabel">Adjustment</div>
+    <div class="group">
+      <div class="r"><span class="n">Discount or extra<br><span class="calc">Use − for a discount</span></span><input class="ed w ${q.adj?'mod':''}" inputmode="text" id="adjIn" value="${esc(S.adj)}" placeholder="₱0"></div>
+    </div>
+    <div class="group">
+      <div class="r big"><span class="n" style="font-weight:600">Total</span><span class="v" data-out="total">${peso(q.total)}</span></div>
+      <div class="r"><span class="n">Per cbm</span><span class="v" data-out="percbm">${peso(q.perCbm,2)}</span></div>
+      <div class="r"><span class="n">Per truckload</span><span class="v" data-out="truck">${peso(q.truck)}</span></div>
+    </div>
+    <div class="gnote" style="margin-top:-12px">Changes here apply to this quote only. Grey numbers are your saved rates.</div>
+    <button class="wide ghost" id="saveDefaults">Save changed rates as default</button>`;
+  if(fromInput){ // update numbers only, keep focus
+    $('#breakBody').querySelectorAll('[data-out]').forEach(el=>el.textContent={matcalc:`${num(q.vol)} cbm × ${peso(q.rate)}`,delcalc:`${q.trips} × (${num(q.km)} km × ${peso(q.rkm)} + ${peso(q.perTrip)})`,material:peso(q.material),delivery:peso(q.delivery),total:peso(q.total),percbm:peso(q.perCbm,2),truck:peso(q.truck)}[el.dataset.out]);
+    return;
+  }
+  $('#breakBody').innerHTML = body;
+}
+$('#openBreak').addEventListener('click',()=>{ renderBreak(); showSheet('sBreak'); });
+$('#breakBody').addEventListener('input', e=>{
+  const t=e.target;
+  if(t.dataset.ov){ S.ov[t.dataset.ov]=t.value.replace(/[^\d.]/g,''); t.classList.toggle('mod', t.value!==''); }
+  if(t.id==='adjIn'){ S.adj=t.value.replace(/[^\d.+\-]/g,''); t.classList.toggle('mod', !!S.adj); }
+  const keep=openSheet; openSheet=null; render(); openSheet=keep; renderBreak(true);
+});
+$('#breakBody').addEventListener('click', e=>{
+  if(e.target.id!=='saveDefaults') return;
+  const q=quote(); let n=0;
+  if(S.ov.rate){ const p=rates.products.find(p=>p.name===S.product); if(p){p.rate=q.rate;n++;} }
+  if(S.ov.rkm){ const v=rates.vehicles.find(v=>v.name===S.vehicle); if(v){v.rkm=q.rkm;n++;} }
+  for(const k of ['driver','pahinante','diesel']) if(S.ov[k]){ rates.trip[k]=+S.ov[k]; n++; }
+  if(!n){ toast('No rate changes to save'); return; }
+  S.ov={}; saveRates(true); renderBreak(); render(); toast(`Saved ${n} rate${n>1?'s':''} as default`);
+});
+$('#resetOv').addEventListener('click',()=>{ S.ov={}; S.adj=''; renderBreak(); render(); });
+
+/* rates editor */
+function renderRates(){
+  const pr = rates.products.map((p,i)=>`<div class="r"><button class="x" data-del="products:${i}" aria-label="Remove">⊖</button><input class="txt" data-f="products:${i}:name" value="${esc(p.name)}" placeholder="Name"><input class="ed" inputmode="decimal" data-f="products:${i}:rate" value="${p.rate??''}" placeholder="0"></div>`).join('');
+  const vh = rates.vehicles.map((v,i)=>`<div class="r"><button class="x" data-del="vehicles:${i}" aria-label="Remove">⊖</button><input class="txt" data-f="vehicles:${i}:name" value="${esc(v.name)}" placeholder="Name"><input class="ed s" inputmode="decimal" data-f="vehicles:${i}:cap" value="${v.cap??''}" placeholder="cbm"><input class="ed s" inputmode="decimal" data-f="vehicles:${i}:rkm" value="${v.rkm??''}" placeholder="₱/km"></div>`).join('');
+  const tr = [['driver','Driver'],['pahinante','Pahinante'],['diesel','Diesel']].map(([k,l])=>`<div class="r"><span class="n">${l}</span><input class="ed" inputmode="decimal" data-f="trip:${k}" value="${rates.trip[k]??0}"></div>`).join('');
+  $('#ratesBody').innerHTML = `
+    <div class="glabel">Aggregates · ₱ per cbm</div>
+    <div class="group">${pr}<button class="r add" data-addrow="products">＋ Add aggregate</button></div>
+    <div class="glabel">Trucks · capacity cbm · ₱ per km</div>
+    <div class="group">${vh}<button class="r add" data-addrow="vehicles">＋ Add truck</button></div>
+    <div class="glabel">Per-trip costs · ₱</div>
+    <div class="group">${tr}<div class="r sum"><span class="n">Per trip</span><span class="v" id="tripSum">${peso(+rates.trip.driver + +rates.trip.pahinante + +rates.trip.diesel)}</span></div></div>
+    <div class="gnote">Saved bookings keep the price they were quoted at.</div>
+    <div class="glabel">Backup</div>
+    <div class="group">
+      <button class="r add" id="copyBackup">Copy backup</button>
+      <button class="r add" id="showRestore">Restore from a backup</button>
+    </div>
+    <div id="restoreBox" hidden><textarea class="bk" id="restoreText" placeholder="Paste a backup here"></textarea><button class="wide" id="doRestore">Restore</button><div style="height:22px"></div></div>
+    <div class="gnote">Rates and bookings live on this phone. Copy a backup now and then, and paste it into Notes or a message to yourself.</div>
+    <button class="wide ghost" id="resetRates">Restore original rates</button>
+    <div class="sync" id="syncNote"></div>`;
+  syncNote();
+}
+$('#openRates').addEventListener('click',()=>{ renderRates(); showSheet('sRates'); });
+$('#ratesBody').addEventListener('input', e=>{
+  const f=e.target.dataset.f; if(!f) return; const [a,i,k]=f.split(':');
+  if(a==='trip'){ rates.trip[i]= +e.target.value.replace(/[^\d.]/g,'')||0; $('#tripSum').textContent=peso(+rates.trip.driver + +rates.trip.pahinante + +rates.trip.diesel); }
+  else { const row=rates[a][+i]; const old=row.name;
+    if(k==='name'){ row.name=e.target.value; if(a==='products'&&S.product===old) S.product=row.name; if(a==='vehicles'&&S.vehicle===old) S.vehicle=row.name; }
+    else row[k]= +e.target.value.replace(/[^\d.]/g,'')||0; }
+  saveRates();
+});
+let delArm=null;
+$('#ratesBody').addEventListener('click', e=>{
+  const d=e.target.closest('[data-del]'), ad=e.target.closest('[data-addrow]');
+  if(d){ const [a,i]=d.dataset.del.split(':');
+    if(delArm!==d.dataset.del){ delArm=d.dataset.del; d.textContent='Delete'; d.style.width='auto'; d.style.fontSize='15px'; setTimeout(()=>{ if(delArm===d.dataset.del){delArm=null; if(d.isConnected){d.textContent='⊖';d.style.cssText='';}} },2500); return; }
+    delArm=null; rates[a].splice(+i,1); saveRates(true); renderRates(); render(); }
+  if(ad){ rates[ad.dataset.addrow].push(ad.dataset.addrow==='products'?{name:'',rate:0}:{name:'',cap:0,rkm:0}); renderRates();
+    const ins=$('#ratesBody').querySelectorAll(`[data-f^="${ad.dataset.addrow}:"][data-f$=":name"]`); ins[ins.length-1]?.focus(); }
+  if(e.target.id==='copyBackup'){ copyText(JSON.stringify({app:'aggregate-quote',v:1,at:new Date().toISOString(),rates,bookings}), 'Backup copied'); }
+  if(e.target.id==='showRestore'){ const b=$('#restoreBox'); b.hidden=!b.hidden; if(!b.hidden) $('#restoreText').focus(); }
+  if(e.target.id==='doRestore'){
+    let d; try{ d=JSON.parse($('#restoreText').value); }catch(_){ toast('That isn’t a valid backup'); return; }
+    if(!d||!d.rates||!Array.isArray(d.bookings)){ toast('That isn’t a valid backup'); return; }
+    if(!e.target.dataset.sure){ e.target.dataset.sure='1'; e.target.textContent=`Replace rates and add ${d.bookings.length} bookings?`; return; }
+    rates=d.rates; const have=new Set(bookings.map(b=>b.ref));
+    bookings=[...bookings, ...d.bookings.filter(b=>!have.has(b.ref))].sort((a,b)=>String(b.at).localeCompare(String(a.at)));
+    LS.set('aq.bookings',bookings); saveRates(true); renderRates(); render(); toast('<span class="ok">✓</span>Backup restored'); }
+  if(e.target.id==='resetRates'){ if(e.target.dataset.sure){ rates=JSON.parse(JSON.stringify(DEFAULT_RATES)); saveRates(true); renderRates(); render(); toast('Original rates restored'); } else { e.target.dataset.sure='1'; e.target.textContent='Tap again to restore'; } }
+});
+
+/* booking */
+function nextRef(){ const m=bookings.reduce((a,b)=>Math.max(a, parseInt(String(b.ref).replace(/\D/g,''),10)||0),0); return 'BK-'+String(m+1).padStart(4,'0'); }
+$('#bookBtn').addEventListener('click',()=>{
+  const q=quote(); if(!q.ready) return;
+  $('#bookBody').innerHTML = `
+    <div class="group">
+      <div class="r big"><span class="n" style="font-weight:600">${nextRef()}</span><span class="v">${peso(q.total)}</span></div>
+      <div class="r"><span class="n">${esc(q.p.name)}</span><span class="v">${num(q.vol)} cbm</span></div>
+      <div class="r"><span class="n">${esc(q.v.name)}</span><span class="v">${num(q.km)} km · ${q.trips} trip${q.trips>1?'s':''}</span></div>
+    </div>
+    <div class="group">
+      <div class="r"><input class="txt" id="bkCust" placeholder="Customer (optional)" autocomplete="off"></div>
+      <div class="r"><span class="n">Delivery date</span><input class="ed w" type="date" id="bkDate" style="color-scheme:dark"></div>
+    </div>
+    <div class="gnote" style="margin-top:-12px">Saved with today's date and time.</div>
+    <button class="wide" id="bkConfirm">Confirm booking</button>`;
+  showSheet('sBook');
+});
+$('#bookBody').addEventListener('click', async e=>{
+  if(e.target.id!=='bkConfirm') return;
+  const btn=e.target; btn.disabled=true;
+  const q=quote(); const ref=nextRef();
+  const rec={ref, at:new Date().toISOString(), customer:$('#bkCust').value.trim(), deliveryDate:$('#bkDate').value||'',
+    product:q.p.name, volume:q.vol, vehicle:q.v.name, distance:q.km, trips:q.trips, ratePerCbm:q.rate, ratePerKm:q.rkm, perTrip:q.perTrip,
+    material:Math.round(q.material*100)/100, delivery:Math.round(q.delivery*100)/100, adjustment:q.adj, total:Math.round(q.total*100)/100, status:'Confirmed'};
+  const ok = await putBooking(rec);
+  if(!ok){ btn.disabled=false; return; }
+  S.vol=''; S.km=''; S.ov={}; S.adj=''; S.active='vol';
+  closeSheet(); toast(`<span class="ok">✓</span>${ref} saved · ${peso(rec.total)}`);
+});
+
+/* bookings list */
+let expanded=null, delSure=null;
+function monthKey(d){ const x=new Date(d); return x.getFullYear()*12+x.getMonth(); }
+function renderList(){
+  const now=monthKey(new Date());
+  const live=bookings.filter(b=>b.status!=='Cancelled');
+  const mo=live.filter(b=>monthKey(b.at)===now);
+  const stats=`<div class="stats"><div class="stat"><small>This month</small><b>${peso(mo.reduce((a,b)=>a+(+b.total||0),0))}</b></div><div class="stat"><small>Bookings</small><b>${mo.length}</b></div></div>`;
+  if(!bookings.length){ $('#listBody').innerHTML = stats+`<div class="group"><div class="empty-state"><b>No bookings yet</b>Price a delivery, tap Book, and it appears here with the date.</div></div><div class="sync" id="syncNote"></div>`; syncNote(); return; }
+  const fmt=d=>new Date(d).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+  const rows=bookings.map(b=>`
+    <button class="r" data-ref="${esc(b.ref)}"><span class="n">${esc(b.customer||b.product)}<br><span class="calc">${esc(b.ref)} · ${fmt(b.at)}${b.customer?' · '+esc(b.product):''}</span></span><span class="pill ${esc(b.status)}">${esc(b.status)}</span><span class="v" style="color:var(--fg);min-width:78px;text-align:right">${peso(b.total)}</span></button>
+    ${expanded===b.ref?`<div style="padding:0 16px 10px" class="calc">${num(b.volume)} cbm · ${esc(b.vehicle)} · ${num(b.distance)} km · ${b.trips} trip${b.trips>1?'s':''}<br>Material ${peso(b.material)} · Delivery ${peso(b.delivery)}${b.adjustment?` · Adj. ${peso(b.adjustment)}`:''}${b.deliveryDate?`<br>Delivery on ${new Date(b.deliveryDate+'T00:00').toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'})}`:''}</div>
+      <div class="bk-actions">${['Confirmed','Delivered','Cancelled'].map(s=>`<button class="seg ${b.status===s?'on':''}" data-status="${s}" data-for="${esc(b.ref)}">${s}</button>`).join('')}<button class="seg del ${delSure===b.ref?'sure':''}" data-delbk="${esc(b.ref)}">${delSure===b.ref?'Delete?':'Delete'}</button></div>`:''}`).join('');
+  $('#listBody').innerHTML = stats + `<div class="group">${rows}</div><button class="wide ghost" id="copySheets">Copy all for Google Sheets</button><div class="gnote" style="margin:8px 0 0">Paste into the Bookings tab, cell B5.</div><div class="sync" id="syncNote"></div>`;
+  syncNote();
+}
+$('#openBookings').addEventListener('click',()=>{ renderList(); showSheet('sList'); });
+$('#listBody').addEventListener('click', async e=>{
+  const r=e.target.closest('[data-ref]'), st=e.target.closest('[data-status]'), del=e.target.closest('[data-delbk]');
+  if(st){ const b=bookings.find(x=>x.ref===st.dataset.for); if(b&&b.status!==st.dataset.status){ b.status=st.dataset.status; await patchBooking(b.ref,{status:b.status}); renderList(); } return; }
+  if(del){ const ref=del.dataset.delbk; if(delSure!==ref){ delSure=ref; renderList(); return; } delSure=null; expanded=null; await removeBooking(ref); renderList(); toast(`${ref} deleted`); return; }
+  if(r){ expanded = expanded===r.dataset.ref?null:r.dataset.ref; delSure=null; renderList(); return; }
+  if(e.target.id==='copySheets'){
+    const f=d=>{ const x=new Date(d); return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')} ${String(x.getHours()).padStart(2,'0')}:${String(x.getMinutes()).padStart(2,'0')}`; };
+    const tsv=[...bookings].reverse().map(b=>[b.ref,f(b.at),b.deliveryDate,b.customer,b.product,b.volume,b.vehicle,b.distance,b.trips,b.material,b.delivery,b.total,b.status].join('\t')).join('\n');
+    copyText(tsv,'Copied '+bookings.length+' bookings');
+  }
+});
+
+async function copyText(t,msg){
+  try{ await navigator.clipboard.writeText(t); toast('<span class="ok">✓</span>'+msg); }
+  catch(err){ const ta=document.createElement('textarea'); ta.value=t; ta.style.cssText='position:fixed;opacity:0'; document.body.appendChild(ta); ta.select(); try{document.execCommand('copy'); toast('<span class="ok">✓</span>'+msg);}catch(_){toast('Copy isn’t allowed here');} ta.remove(); }
+}
+/* ---------- storage: shared db when available, this device otherwise ---------- */
+function syncNote(){ const n=$('#syncNote'); if(n) n.textContent = db ? 'Synced across your devices' : 'Saved on this phone'; }
+let rateTimer=null;
+function saveRates(now){
+  LS.set('aq.rates', rates);
+  clearTimeout(rateTimer);
+  const go=async()=>{ if(!db) return; try{ await db.doc('settings/rates').set(JSON.parse(JSON.stringify(rates))); }catch(e){ if(e&&e.code==='invalid_argument') toast('You can view rates but not change them'); } };
+  if(now) go(); else rateTimer=setTimeout(go,700);
+}
+async function putBooking(rec){
+  if(db){ try{ await db.collection('bookings').doc(rec.ref).set(rec); }
+    catch(e){ toast(e&&e.code==='quota_exceeded'?'Storage full. Delete old bookings first.':e&&e.code==='invalid_argument'?'This view can’t save bookings':'Couldn’t save. Try again.'); return false; } }
+  bookings=[rec,...bookings.filter(b=>b.ref!==rec.ref)]; LS.set('aq.bookings',bookings); return true;
+}
+async function patchBooking(ref,patch){ if(db){ try{ await db.collection('bookings').doc(ref).update(patch);}catch(e){ toast('Couldn’t update'); } } LS.set('aq.bookings',bookings); }
+async function removeBooking(ref){ if(db){ try{ await db.collection('bookings').doc(ref).delete(); }catch(e){ toast('Couldn’t delete'); return; } } bookings=bookings.filter(b=>b.ref!==ref); LS.set('aq.bookings',bookings); }
+
+async function connect(){
+  if(!window.claude?.use) return;
+  try{ db = await window.claude.use('db'); }catch(e){ db=null; }
+  if(!db){ syncNote(); return; }
+  syncNote();
+  db.doc('settings/rates').onSnapshot(s=>{
+    if(s.metadata.hasPendingWrites) return;
+    if(!s.exists){ saveRates(true); return; } // first run: store the current rates
+    const d=s.data(); if(JSON.stringify(d)===JSON.stringify(rates)) return;
+    rates={products:[...(d.products||[])].map(x=>({...x})),vehicles:[...(d.vehicles||[])].map(x=>({...x})),trip:{...(d.trip||{driver:0,pahinante:0,diesel:0})}};
+    LS.set('aq.rates',rates);
+    if(openSheet==='sRates' && document.activeElement?.closest('#sRates')) return;
+    if(openSheet==='sRates') renderRates(); render();
+  }, ()=>{});
+  db.collection('bookings').orderBy('at','desc').limit(1000).onSnapshot(s=>{
+    bookings=s.docs.map(d=>({...d.data()})); LS.set('aq.bookings',bookings);
+    if(openSheet==='sList') renderList();
+  }, ()=>{});
+}
+
+/* ---------- toast ---------- */
+let tt=null;
+function toast(html){ const t=$('#toast'); t.innerHTML=html; t.classList.add('on'); clearTimeout(tt); tt=setTimeout(()=>t.classList.remove('on'),2200); }
+
+window.addEventListener('resize', fit);
+render();
+connect();
+// Native shell (Capacitor): black status bar with light icons
+try{ const SB=window.Capacitor?.Plugins?.StatusBar; if(SB){ SB.setStyle({style:'DARK'}).catch(()=>{}); SB.setBackgroundColor?.({color:'#000000'}).catch?.(()=>{}); } }catch(e){}
+// Offline support when served from the web
+if('serviceWorker' in navigator && location.protocol==='https:' && !window.Capacitor?.isNativePlatform?.()){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
+})();
+</script>
+
+</body>
+</html>
