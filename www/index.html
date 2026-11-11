@@ -218,7 +218,7 @@ textarea.bk{width:100%;min-height:110px;background:var(--row);color:var(--fg);bo
 <script>
 (() => {
 const $ = s => document.querySelector(s);
-const peso = (n, d=0) => '₱' + (Number(n)||0).toLocaleString('en-PH',{minimumFractionDigits:d,maximumFractionDigits:d});
+const peso = (n, d=0) => { const x=Number(n)||0; return (x<0?'−':'')+'₱'+Math.abs(x).toLocaleString('en-PH',{minimumFractionDigits:d,maximumFractionDigits:d}); };
 const num = (n, d=2) => (Number(n)||0).toLocaleString('en-PH',{maximumFractionDigits:d});
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const LS = { get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}}, set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}} };
@@ -264,8 +264,14 @@ function quote(){
   const material=vol*rate, transport=trips*rkm*km, labour=trips*perTrip, delivery=transport+labour;
   const adj = evalExpr(S.adj);
   const total=material+delivery+adj;
+  const per = x => vol ? x/vol : 0;
+  const loaded = trips*cap;                       // cbm the trucks could carry
+  const util = loaded ? vol/loaded : 0;           // how full the trucks are
+  const fullDelPerCbm = cap ? (rkm*km + perTrip)/cap : 0; // delivery per cbm if every truck were full
   return {p,v,vol,km,rate,rkm,cap,driver,pah,diesel,perTrip,trips,material,transport,labour,delivery,adj,total,
-    perCbm: vol? total/vol : 0, truck: rate*cap + rkm*km + perTrip,
+    perCbm: per(total), matPerCbm: per(material), transPerCbm: per(transport), labPerCbm: per(labour),
+    delPerCbm: per(delivery), adjPerCbm: per(adj), loaded, util, fullDelPerCbm,
+    truck: rate*cap + rkm*km + perTrip,
     ready: !!(p.name && v.name && vol>0 && km>0)};
 }
 
@@ -288,7 +294,7 @@ function render(){
   $('#nextKey').textContent = S.active==='vol' ? 'km ›' : '‹ cbm';
   $('#acKey').textContent = S[S.active] ? 'C' : 'AC';
   const edited = Object.keys(S.ov).some(k=>S.ov[k]!==''&&S.ov[k]!==undefined) || q.adj;
-  $('#meta').textContent = q.trips ? `${q.trips} trip${q.trips>1?'s':''} · ${num(q.vol)} cbm · ${num(q.km)} km` : 'Enter volume and distance';
+  $('#meta').textContent = q.trips ? `${q.trips} trip${q.trips>1?'s':''} · ${num(q.vol)} cbm · ${num(q.km)} km · ${peso(q.perCbm,2)} / cbm` : 'Enter volume and distance';
   $('#split').innerHTML = `<b>${peso(q.material)}</b> material + <b>${peso(q.delivery)}</b> delivery${q.adj?` <span class="adj">${q.adj>0?'+':'−'} ${peso(Math.abs(q.adj))}</span>`:''}${edited?' <span class="adj">•</span>':''}`;
   $('#total').innerHTML = `<span class="cur">₱</span>${Math.round(q.total).toLocaleString('en-PH')}`;
   $('#bookBtn').disabled = !q.ready;
@@ -356,6 +362,12 @@ function edRow(name, key, base, sub, cls=''){
   const v = S.ov[key]; const mod = v!==undefined && v!=='';
   return `<div class="r"><span class="n">${name}${sub?`<br><span class="calc">${sub}</span>`:''}</span><input class="ed ${cls} ${mod?'mod':''}" inputmode="decimal" data-ov="${key}" value="${mod?esc(v):''}" placeholder="${num(base)}" aria-label="${name}"></div>`;
 }
+function utilNote(q){
+  if(!q.trips) return '';
+  const pct=Math.round(q.util*100);
+  if(pct>=100) return `Trucks are full (${num(q.vol)} of ${num(q.loaded)} cbm).`;
+  return `Trucks are ${pct}% full (${num(q.vol)} of ${num(q.loaded)} cbm). At full loads, delivery would be ${peso(q.fullDelPerCbm,2)} per cbm instead of ${peso(q.delPerCbm,2)}.`;
+}
 function renderBreak(fromInput){
   const q=quote();
   const body = `
@@ -379,13 +391,24 @@ function renderBreak(fromInput){
     </div>
     <div class="group">
       <div class="r big"><span class="n" style="font-weight:600">Total</span><span class="v" data-out="total">${peso(q.total)}</span></div>
-      <div class="r"><span class="n">Per cbm</span><span class="v" data-out="percbm">${peso(q.perCbm,2)}</span></div>
       <div class="r"><span class="n">Per truckload</span><span class="v" data-out="truck">${peso(q.truck)}</span></div>
     </div>
+    <div class="glabel">Per cbm (m³)</div>
+    <div class="group">
+      <div class="r"><span class="n">Material</span><span class="v" data-out="pmat">${peso(q.matPerCbm,2)}</span></div>
+      <div class="r"><span class="n">Trucking<br><span class="calc" data-out="ptranscalc">${peso(q.transport)} ÷ ${num(q.vol)} cbm</span></span><span class="v" data-out="ptrans">${peso(q.transPerCbm,2)}</span></div>
+      <div class="r"><span class="n">Driver, pahinante, diesel</span><span class="v" data-out="plab">${peso(q.labPerCbm,2)}</span></div>
+      <div class="r" data-row="padj" ${q.adj?'':'hidden'}><span class="n">Adjustment</span><span class="v" data-out="padj">${peso(q.adjPerCbm,2)}</span></div>
+      <div class="r sum"><span class="n">Total per cbm<br><span class="calc" data-out="pcalc">${peso(q.total)} ÷ ${num(q.vol)} cbm</span></span><span class="v" data-out="percbm">${peso(q.perCbm,2)}</span></div>
+    </div>
+    <div class="gnote" data-out="utilnote">${utilNote(q)}</div>
     <div class="gnote" style="margin-top:-12px">Changes here apply to this quote only. Grey numbers are your saved rates.</div>
     <button class="wide ghost" id="saveDefaults">Save changed rates as default</button>`;
   if(fromInput){ // update numbers only, keep focus
-    $('#breakBody').querySelectorAll('[data-out]').forEach(el=>el.textContent={matcalc:`${num(q.vol)} cbm × ${peso(q.rate)}`,delcalc:`${q.trips} × (${num(q.km)} km × ${peso(q.rkm)} + ${peso(q.perTrip)})`,material:peso(q.material),delivery:peso(q.delivery),total:peso(q.total),percbm:peso(q.perCbm,2),truck:peso(q.truck)}[el.dataset.out]);
+    const vals={matcalc:`${num(q.vol)} cbm × ${peso(q.rate)}`,delcalc:`${q.trips} × (${num(q.km)} km × ${peso(q.rkm)} + ${peso(q.perTrip)})`,material:peso(q.material),delivery:peso(q.delivery),total:peso(q.total),percbm:peso(q.perCbm,2),truck:peso(q.truck),
+      pmat:peso(q.matPerCbm,2),ptrans:peso(q.transPerCbm,2),ptranscalc:`${peso(q.transport)} ÷ ${num(q.vol)} cbm`,plab:peso(q.labPerCbm,2),padj:peso(q.adjPerCbm,2),pcalc:`${peso(q.total)} ÷ ${num(q.vol)} cbm`,utilnote:utilNote(q)};
+    $('#breakBody').querySelectorAll('[data-out]').forEach(el=>el.textContent=vals[el.dataset.out]);
+    const ar=$('#breakBody [data-row="padj"]'); if(ar) ar.hidden=!q.adj;
     return;
   }
   $('#breakBody').innerHTML = body;
@@ -455,19 +478,31 @@ $('#ratesBody').addEventListener('click', e=>{
     let d; try{ d=JSON.parse($('#restoreText').value); }catch(_){ toast('That isn’t a valid backup'); return; }
     if(!d||!d.rates||!Array.isArray(d.bookings)){ toast('That isn’t a valid backup'); return; }
     if(!e.target.dataset.sure){ e.target.dataset.sure='1'; e.target.textContent=`Replace rates and add ${d.bookings.length} bookings?`; return; }
-    rates=d.rates; const have=new Set(bookings.map(b=>b.ref));
-    bookings=[...bookings, ...d.bookings.filter(b=>!have.has(b.ref))].sort((a,b)=>String(b.at).localeCompare(String(a.at)));
+    rates=d.rates;
+    // Old-style numbers (BK-0001) repeat across phones, so match on number + time saved, and renumber clashes instead of dropping them.
+    const key=b=>b.ref+'|'+b.at, have=new Set(bookings.map(key)), refs=new Set(bookings.map(b=>b.ref));
+    const incoming=d.bookings.filter(b=>!have.has(key(b))).map(b=>{ if(refs.has(b.ref)){ b={...b, ref:nextRef()}; } refs.add(b.ref); return b; });
+    bookings=[...bookings, ...incoming].sort((a,b)=>String(b.at).localeCompare(String(a.at)));
     LS.set('aq.bookings',bookings); saveRates(true); renderRates(); render(); toast('<span class="ok">✓</span>Backup restored'); }
   if(e.target.id==='resetRates'){ if(e.target.dataset.sure){ rates=JSON.parse(JSON.stringify(DEFAULT_RATES)); saveRates(true); renderRates(); render(); toast('Original rates restored'); } else { e.target.dataset.sure='1'; e.target.textContent='Tap again to restore'; } }
 });
 
 /* booking */
-function nextRef(){ const m=bookings.reduce((a,b)=>Math.max(a, parseInt(String(b.ref).replace(/\D/g,''),10)||0),0); return 'BK-'+String(m+1).padStart(4,'0'); }
+// Booking numbers include the date and a random tag, so two phones never make the same number.
+function nextRef(){
+  const d=new Date(), ymd=String(d.getFullYear()).slice(2)+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');
+  const abc='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let ref;
+  do{ ref='BK-'+ymd+'-'+Array.from({length:4},()=>abc[Math.floor(Math.random()*abc.length)]).join(''); }while(bookings.some(b=>b.ref===ref));
+  return ref;
+}
+let pendingRef=null;
 $('#bookBtn').addEventListener('click',()=>{
   const q=quote(); if(!q.ready) return;
+  pendingRef=nextRef();
   $('#bookBody').innerHTML = `
     <div class="group">
-      <div class="r big"><span class="n" style="font-weight:600">${nextRef()}</span><span class="v">${peso(q.total)}</span></div>
+      <div class="r big"><span class="n" style="font-weight:600">${pendingRef}</span><span class="v">${peso(q.total)}</span></div>
+      <div class="r"><span class="n">Per cbm</span><span class="v">${peso(q.perCbm,2)}</span></div>
       <div class="r"><span class="n">${esc(q.p.name)}</span><span class="v">${num(q.vol)} cbm</span></div>
       <div class="r"><span class="n">${esc(q.v.name)}</span><span class="v">${num(q.km)} km · ${q.trips} trip${q.trips>1?'s':''}</span></div>
     </div>
@@ -482,10 +517,10 @@ $('#bookBtn').addEventListener('click',()=>{
 $('#bookBody').addEventListener('click', async e=>{
   if(e.target.id!=='bkConfirm') return;
   const btn=e.target; btn.disabled=true;
-  const q=quote(); const ref=nextRef();
+  const q=quote(); const ref=pendingRef||nextRef();
   const rec={ref, at:new Date().toISOString(), customer:$('#bkCust').value.trim(), deliveryDate:$('#bkDate').value||'',
     product:q.p.name, volume:q.vol, vehicle:q.v.name, distance:q.km, trips:q.trips, ratePerCbm:q.rate, ratePerKm:q.rkm, perTrip:q.perTrip,
-    material:Math.round(q.material*100)/100, delivery:Math.round(q.delivery*100)/100, adjustment:q.adj, total:Math.round(q.total*100)/100, status:'Confirmed'};
+    material:Math.round(q.material*100)/100, delivery:Math.round(q.delivery*100)/100, adjustment:q.adj, total:Math.round(q.total*100)/100, perCbm:Math.round(q.perCbm*100)/100, status:'Confirmed'};
   const ok = await putBooking(rec);
   if(!ok){ btn.disabled=false; return; }
   S.vol=''; S.km=''; S.ov={}; S.adj=''; S.active='vol';
@@ -494,6 +529,7 @@ $('#bookBody').addEventListener('click', async e=>{
 
 /* bookings list */
 let expanded=null, delSure=null;
+const perCbmOf = b => b.perCbm ?? (+b.volume ? Math.round((+b.total||0)/(+b.volume)*100)/100 : 0); // older bookings have no saved per-cbm
 function monthKey(d){ const x=new Date(d); return x.getFullYear()*12+x.getMonth(); }
 function renderList(){
   const now=monthKey(new Date());
@@ -504,7 +540,7 @@ function renderList(){
   const fmt=d=>new Date(d).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
   const rows=bookings.map(b=>`
     <button class="r" data-ref="${esc(b.ref)}"><span class="n">${esc(b.customer||b.product)}<br><span class="calc">${esc(b.ref)} · ${fmt(b.at)}${b.customer?' · '+esc(b.product):''}</span></span><span class="pill ${esc(b.status)}">${esc(b.status)}</span><span class="v" style="color:var(--fg);min-width:78px;text-align:right">${peso(b.total)}</span></button>
-    ${expanded===b.ref?`<div style="padding:0 16px 10px" class="calc">${num(b.volume)} cbm · ${esc(b.vehicle)} · ${num(b.distance)} km · ${b.trips} trip${b.trips>1?'s':''}<br>Material ${peso(b.material)} · Delivery ${peso(b.delivery)}${b.adjustment?` · Adj. ${peso(b.adjustment)}`:''}${b.deliveryDate?`<br>Delivery on ${new Date(b.deliveryDate+'T00:00').toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'})}`:''}</div>
+    ${expanded===b.ref?`<div style="padding:0 16px 10px" class="calc">${num(b.volume)} cbm · ${esc(b.vehicle)} · ${num(b.distance)} km · ${b.trips} trip${b.trips>1?'s':''}<br>Material ${peso(b.material)} · Delivery ${peso(b.delivery)}${b.adjustment?` · Adj. ${peso(b.adjustment)}`:''}<br>${peso(perCbmOf(b),2)} per cbm${b.deliveryDate?`<br>Delivery on ${new Date(b.deliveryDate+'T00:00').toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'})}`:''}</div>
       <div class="bk-actions">${['Confirmed','Delivered','Cancelled'].map(s=>`<button class="seg ${b.status===s?'on':''}" data-status="${s}" data-for="${esc(b.ref)}">${s}</button>`).join('')}<button class="seg del ${delSure===b.ref?'sure':''}" data-delbk="${esc(b.ref)}">${delSure===b.ref?'Delete?':'Delete'}</button></div>`:''}`).join('');
   $('#listBody').innerHTML = stats + `<div class="group">${rows}</div><button class="wide ghost" id="copySheets">Copy all for Google Sheets</button><div class="gnote" style="margin:8px 0 0">Paste into the Bookings tab, cell B5.</div><div class="sync" id="syncNote"></div>`;
   syncNote();
@@ -517,7 +553,7 @@ $('#listBody').addEventListener('click', async e=>{
   if(r){ expanded = expanded===r.dataset.ref?null:r.dataset.ref; delSure=null; renderList(); return; }
   if(e.target.id==='copySheets'){
     const f=d=>{ const x=new Date(d); return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')} ${String(x.getHours()).padStart(2,'0')}:${String(x.getMinutes()).padStart(2,'0')}`; };
-    const tsv=[...bookings].reverse().map(b=>[b.ref,f(b.at),b.deliveryDate,b.customer,b.product,b.volume,b.vehicle,b.distance,b.trips,b.material,b.delivery,b.total,b.status].join('\t')).join('\n');
+    const tsv=[...bookings].reverse().map(b=>[b.ref,f(b.at),b.deliveryDate,b.customer,b.product,b.volume,b.vehicle,b.distance,b.trips,b.material,b.delivery,b.total,b.status,b.adjustment||0,perCbmOf(b)].join('\t')).join('\n');
     copyText(tsv,'Copied '+bookings.length+' bookings');
   }
 });
