@@ -1,9 +1,10 @@
-# Publishes the app to GitHub Pages. iPhone and Android can install it from Safari / Chrome.
+# Publishes the app to GitHub Pages. Publishes the whole repo (root index.html redirects to www/)
+# so it matches what Pages serves in "Deploy from a branch" mode. iPhone and Android can install it from Safari / Chrome.
 name: Web app
 on:
   push:
     branches: [main]
-    paths: ["www/**", ".github/workflows/web.yml"]
+    paths: ["www/**", "index.html", ".github/workflows/web.yml"]
   workflow_dispatch:
 permissions:
   contents: read
@@ -23,6 +24,6 @@ jobs:
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: www
+          path: .
       - id: deployment
         uses: actions/deploy-pages@v4
